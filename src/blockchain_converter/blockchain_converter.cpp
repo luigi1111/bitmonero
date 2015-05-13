@@ -57,16 +57,7 @@ bool opt_testnet = false;
 
 // number of blocks per batch transaction
 // adjustable through command-line argument according to available RAM
-#if !defined(WIN32)
-uint64_t db_batch_size_verify = 5000;
-#else
-// set a lower default batch size for Windows, pending possible LMDB issue with
-// large batch size.
-uint64_t db_batch_size_verify = 1000;
-#endif
-
-// converter only uses verify mode
-uint64_t db_batch_size = db_batch_size_verify;
+uint64_t db_batch_size = 20000;
 
 }
 

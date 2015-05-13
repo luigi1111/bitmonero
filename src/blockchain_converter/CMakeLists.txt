@@ -37,13 +37,11 @@ bitmonero_private_headers(blockchain_converter
 
 set(blockchain_import_sources
   blockchain_import.cpp
-  bootstrap_file.cpp
   )
 
 set(blockchain_import_private_headers
+  import.h
   fake_core.h
-  bootstrap_file.h
-  bootstrap_serialization.h
   )
 
 bitmonero_private_headers(blockchain_import
@@ -51,12 +49,11 @@ bitmonero_private_headers(blockchain_import
 
 set(blockchain_export_sources
   blockchain_export.cpp
-  bootstrap_file.cpp
   )
 
 set(blockchain_export_private_headers
-  bootstrap_file.h
-  bootstrap_serialization.h
+  import.h
+  blockchain_export.h
   )
 
 bitmonero_private_headers(blockchain_export

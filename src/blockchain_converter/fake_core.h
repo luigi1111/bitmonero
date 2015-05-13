@@ -62,7 +62,7 @@ struct fake_core_lmdb
 
     folder /= db->get_db_name();
 
-    LOG_PRINT_L0("Loading blockchain from folder " << folder.string() << " ...");
+    LOG_PRINT_L0("Loading blockchain from folder " << folder.c_str() << " ...");
 
     const std::string filename = folder.string();
     try
