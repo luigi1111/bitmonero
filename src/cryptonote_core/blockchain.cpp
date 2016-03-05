@@ -2494,6 +2494,7 @@ leave:
   // before checkpoints, which is very dangerous behaviour. We moved the PoW
   // validation out of the next chunk of code to make sure that we correctly
   // check PoW now.
+  // luigi1111 says: nahhh, revert
   // FIXME: height parameter is not used...should it be used or should it not
   // be a parameter?
   // validate proof_of_work versus difficulty target
@@ -2514,33 +2515,35 @@ leave:
   else
 #endif
   {
-    auto it = m_blocks_longhash_table.find(id);
-    if (it != m_blocks_longhash_table.end())
+    if(!m_checkpoints.is_in_checkpoint_zone(get_current_blockchain_height()))
     {
-      precomputed = true;
-      proof_of_work = it->second;
+      auto it = m_blocks_longhash_table.find(id);
+      if (it != m_blocks_longhash_table.end())
+      {
+        precomputed = true;
+        proof_of_work = it->second;
+      }
+      else
+        proof_of_work = get_block_longhash(bl, m_db->height());
+
+      // validate proof_of_work versus difficulty target
+      if(!check_hash(proof_of_work, current_diffic))
+      {
+        LOG_PRINT_L1("Block with id: " << id << std::endl << "does not have enough proof of work: " << proof_of_work << std::endl << "unexpected difficulty: " << current_diffic);
+        bvc.m_verifivation_failed = true;
+        goto leave;
+      }
     }
     else
-      proof_of_work = get_block_longhash(bl, m_db->height());
-
-    // validate proof_of_work versus difficulty target
-    if(!check_hash(proof_of_work, current_diffic))
     {
-      LOG_PRINT_L1("Block with id: " << id << std::endl << "does not have enough proof of work: " << proof_of_work << std::endl << "unexpected difficulty: " << current_diffic);
-      bvc.m_verifivation_failed = true;
-      goto leave;
-    }
-  }
-
-  // If we're at a checkpoint, ensure that our hardcoded checkpoint hash
-  // is correct.
-  if(m_checkpoints.is_in_checkpoint_zone(get_current_blockchain_height()))
-  {
-    if(!m_checkpoints.check_block(get_current_blockchain_height(), id))
-    {
-      LOG_ERROR("CHECKPOINT VALIDATION FAILED");
-      bvc.m_verifivation_failed = true;
-      goto leave;
+      // If we're at a checkpoint, ensure that our hardcoded checkpoint hash
+      // is correct.
+      if(!m_checkpoints.check_block(get_current_blockchain_height(), id))
+      {
+        LOG_ERROR("CHECKPOINT VALIDATION FAILED");
+        bvc.m_verifivation_failed = true;
+        goto leave;
+      }
     }
   }
 
