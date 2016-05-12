@@ -336,6 +336,7 @@ POP_WARNINGS
     hash_to_scalar(buf, rs_comm_size(pubs_count), h);
     sc_sub(&sig[sec_index].c, &h, &sum);
     sc_mulsub(&sig[sec_index].r, &sig[sec_index].c, &sec, &k);
+    return true;
   }
 
   bool crypto_ops::check_ring_signature(const hash &prefix_hash, const key_image &image,
