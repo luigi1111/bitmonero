@@ -572,7 +572,7 @@ namespace cryptonote
     }
 
     //check money
-    if(summary_outs_money > summary_inputs_money)
+    if(summary_outs_money > summary_inputs_money )
     {
       LOG_ERROR("Transaction inputs money ("<< summary_inputs_money << ") less than outputs money (" << summary_outs_money << ")");
       return false;
@@ -598,7 +598,7 @@ namespace cryptonote
       tx.signatures.push_back(std::vector<crypto::signature>());
       std::vector<crypto::signature>& sigs = tx.signatures.back();
       sigs.resize(src_entr.outputs.size());
-      if(!crypto::generate_ring_signature(tx_prefix_hash, boost::get<txin_to_key>(tx.vin[i]).k_image, keys_ptrs, in_contexts[i].in_ephemeral.sec, src_entr.real_output, sigs.data());
+      if(!crypto::generate_ring_signature(tx_prefix_hash, boost::get<txin_to_key>(tx.vin[i]).k_image, keys_ptrs, in_contexts[i].in_ephemeral.sec, src_entr.real_output, sigs.data()));
       {
         LOG_ERROR("failed to generate ring signature!");
         return false;
