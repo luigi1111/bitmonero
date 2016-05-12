@@ -231,7 +231,7 @@ namespace crypto {
     buf.h = prefix_hash;
     buf.key = pub;
     if (ge_frombytes_vartime(&tmp3, &pub) != 0) {
-      abort();
+      return false;
     }
     if (sc_check(&sig.c) != 0 || sc_check(&sig.r) != 0) {
       return false;
@@ -304,7 +304,7 @@ POP_WARNINGS
     }
 #endif
     if (ge_frombytes_vartime(&image_unp, &image) != 0) {
-      abort();
+      return false;
     }
     ge_dsm_precomp(image_pre, &image_unp);
     sc_0(&sum);
@@ -323,7 +323,7 @@ POP_WARNINGS
         random_scalar(sig[i].c);
         random_scalar(sig[i].r);
         if (ge_frombytes_vartime(&tmp3, &*pubs[i]) != 0) {
-          abort();
+          return false;
         }
         ge_double_scalarmult_base_vartime(&tmp2, &sig[i].c, &tmp3, &sig[i].r);
         ge_tobytes(&buf->ab[i].a, &tmp2);
@@ -336,6 +336,7 @@ POP_WARNINGS
     hash_to_scalar(buf, rs_comm_size(pubs_count), h);
     sc_sub(&sig[sec_index].c, &h, &sum);
     sc_mulsub(&sig[sec_index].r, &sig[sec_index].c, &sec, &k);
+    return true;
   }
 
   bool crypto_ops::check_ring_signature(const hash &prefix_hash, const key_image &image,
@@ -364,7 +365,7 @@ POP_WARNINGS
         return false;
       }
       if (ge_frombytes_vartime(&tmp3, &*pubs[i]) != 0) {
-        abort();
+        return false;
       }
       ge_double_scalarmult_base_vartime(&tmp2, &sig[i].c, &tmp3, &sig[i].r);
       ge_tobytes(&buf->ab[i].a, &tmp2);
