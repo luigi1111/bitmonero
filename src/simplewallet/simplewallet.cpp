@@ -1357,6 +1357,11 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
           return false;
         }
       }
+      else if (m_restore_deterministic_wallet)
+      {
+        //approximately 8 hours before the 8th of June 2014 as per account.cpp -- allows fast_refresh for deterministic restores with no height set (not a large change)
+        m_restore_height = 75000;
+      }
     }
     if (!m_generate_from_view_key.empty())
     {
@@ -1634,13 +1639,17 @@ bool simple_wallet::new_wallet(const std::string &wallet_file, const std::string
   m_wallet->set_seed_language(mnemonic_language);
 
   // for a totally new account, we don't care about older blocks.
-  if (!m_restoring)
+  if (m_restoring)
+  {
+    if (m_restore_height)
+    {
+    m_wallet->set_refresh_from_block_height(m_restore_height);
+    }
+  }
+  else
   {
     std::string err;
     m_wallet->set_refresh_from_block_height(get_daemon_blockchain_height(err));
-  } else if (m_restore_height)
-  {
-    m_wallet->set_refresh_from_block_height(m_restore_height);
   }
 
   crypto::secret_key recovery_val;
