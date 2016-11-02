@@ -942,7 +942,8 @@ bool simple_wallet::ask_wallet_create_if_needed()
         else if(!wallet_file_exists && !keys_file_exists) //No wallet, no keys
         {
           message_writer() << tr((m_restoring) ? "Confirm wallet name: " : "No wallet found with that name. Confirm creation of new wallet named: ") << wallet_path;
-          confirm_creation = command_line::input_line(tr("(y)es/(n)o: "));
+          confirm_creation = command_line::input_line(tr("[Y/n]: "));
+          confirm_creation = confirm_creation == "" ? "y" : confirm_creation;
           if(std::cin.eof())
           {
             LOG_ERROR("Unexpected std::cin.eof() - Exited simple_wallet::ask_wallet_create_if_needed()");
