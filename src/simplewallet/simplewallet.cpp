@@ -886,10 +886,20 @@ bool simple_wallet::ask_wallet_create_if_needed()
 
   do{
       LOG_PRINT_L3("User asked to specify wallet file name.");
-      wallet_path = command_line::input_line(
-      tr("Specify wallet file name (e.g., MyWallet). If the wallet doesn't exist, it will be created.\n"
-         "Wallet file name (or Ctrl-C to quit): ")
-      );
+      if (m_restoring)
+      {
+        wallet_path = command_line::input_line(
+          tr("Specify a new wallet file name for your restored wallet (e.g., MyWallet).\n"
+          "Wallet file name (or Ctrl-C to quit): ")
+        );
+      }
+      else
+      {
+        wallet_path = command_line::input_line(
+          tr("Specify wallet file name (e.g., MyWallet). If the wallet doesn't exist, it will be created.\n"
+          "Wallet file name (or Ctrl-C to quit): ")
+        );
+      }
       if(std::cin.eof())
       {
         LOG_ERROR("Unexpected std::cin.eof() - Exited simple_wallet::ask_wallet_create_if_needed()");
@@ -931,7 +941,7 @@ bool simple_wallet::ask_wallet_create_if_needed()
         }
         else if(!wallet_file_exists && !keys_file_exists) //No wallet, no keys
         {
-          message_writer() << tr("No wallet/key file found with that name. Confirm creation of new wallet named: ") << wallet_path;
+          message_writer() << tr((m_restoring) ? "Confirm wallet name: " : "No wallet found with that name. Confirm creation of new wallet named: ") << wallet_path;
           confirm_creation = command_line::input_line(tr("(y)es/(n)o: "));
           if(std::cin.eof())
           {
@@ -968,7 +978,7 @@ void simple_wallet::print_seed(std::string seed)
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::get_password(const boost::program_options::variables_map& vm, bool allow_entry, tools::password_container &pwd_container)
+bool simple_wallet::get_password(const boost::program_options::variables_map& vm, bool allow_entry, tools::password_container &pwd_container, bool is_new_wallet)
 {
   // has_arg returns true even when the parameter is not passed ??
   const std::string gfj = command_line::get_arg(vm, arg_generate_from_json);
@@ -1011,7 +1021,7 @@ bool simple_wallet::get_password(const boost::program_options::variables_map& vm
   {
       //vm is already part of the password container class.  just need to check vm for an already existing wallet
       //here need to pass in variable map.  This will indicate if the wallet already exists to the read password function
-    bool r = pwd_container.read_password();
+    bool r = (is_new_wallet) ? pwd_container.read_password("Specify a password for your new wallet") : pwd_container.read_password();
     if (!r)
     {
       fail_msg_writer() << tr("failed to read wallet password");
@@ -1297,7 +1307,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
   }
   catch (const std::exception &e) { }
   tools::password_container pwd_container(m_wallet_file.empty()); //m_wallet_file will be empty at this point for new wallets
-  if (!cryptonote::simple_wallet::get_password(vm, true, pwd_container))
+  if (!cryptonote::simple_wallet::get_password(vm, true, pwd_container, (!m_generate_new.empty() || m_restoring)))
     return false;
 
   if (!m_generate_new.empty() || m_restoring)
@@ -4381,7 +4391,7 @@ int main(int argc, char* argv[])
     std::string wallet_file     = command_line::get_arg(vm, arg_wallet_file);
  
     tools::password_container pwd_container(wallet_file.empty());
-    if (!cryptonote::simple_wallet::get_password(vm, false, pwd_container))
+    if (!cryptonote::simple_wallet::get_password(vm, false, pwd_container, false))
       return 1;
     std::string daemon_address  = command_line::get_arg(vm, arg_daemon_address);
     std::string daemon_host = command_line::get_arg(vm, arg_daemon_host);
