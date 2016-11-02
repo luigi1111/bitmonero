@@ -2493,10 +2493,11 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
   // prompt is there is no payment id and confirmation is required
   if (!payment_id_seen && m_wallet->confirm_missing_payment_id())
   {
-     std::string accepted = command_line::input_line(tr("No payment id is included with this transaction. Is this okay?  (Y/Yes/N/No)"));
+     std::string accepted = command_line::input_line(tr("No payment id is included with this transaction. Is this okay?  [Y/n]"));
+     accepted = accepted == "" ? "y" : accepted;
      if (std::cin.eof())
        return true;
-     if (accepted != "Y" && accepted != "y" && accepted != "Yes" && accepted != "yes")
+     if (!is_it_true(accepted))
      {
        fail_msg_writer() << tr("transaction cancelled.");
 
@@ -2570,12 +2571,12 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
           float days = locked_blocks / 720.0f;
           prompt << boost::format(tr(".\nThis transaction will unlock on block %llu, in approximately %s days (assuming 2 minutes per block)")) % ((unsigned long long)unlock_block) % days;
         }
-        prompt << tr(".") << ENDL << tr("Is this okay?  (Y/Yes/N/No)");
-        
+        prompt << tr(".") << ENDL << tr("Is this okay?  [Y/n]");
         std::string accepted = command_line::input_line(prompt.str());
+        accepted = accepted == "" ? "y" : accepted;
         if (std::cin.eof())
           return true;
-        if (accepted != "Y" && accepted != "y" && accepted != "Yes" && accepted != "yes")
+        if (!is_it_true(accepted))
         {
           fail_msg_writer() << tr("transaction cancelled.");
 
@@ -2965,10 +2966,11 @@ bool simple_wallet::sweep_all(const std::vector<std::string> &args_)
   // prompt is there is no payment id and confirmation is required
   if (!payment_id_seen && m_wallet->confirm_missing_payment_id())
   {
-     std::string accepted = command_line::input_line(tr("No payment id is included with this transaction. Is this okay?  (Y/Yes/N/No)"));
+     std::string accepted = command_line::input_line(tr("No payment id is included with this transaction. Is this okay?  [Y/n]"));
+     accepted = accepted == "" ? "y" : accepted;
      if (std::cin.eof())
        return true;
-     if (accepted != "Y" && accepted != "y" && accepted != "Yes" && accepted != "yes")
+     if (!is_it_true(accepted))
      {
        fail_msg_writer() << tr("transaction cancelled.");
 
@@ -3000,20 +3002,20 @@ bool simple_wallet::sweep_all(const std::vector<std::string> &args_)
 
     std::string prompt_str;
     if (ptx_vector.size() > 1) {
-      prompt_str = (boost::format(tr("Sweeping %s in %llu transactions for a total fee of %s.  Is this okay?  (Y/Yes/N/No)")) %
+      prompt_str = (boost::format(tr("Sweeping %s in %llu transactions for a total fee of %s.  Is this okay?  [y/N]")) %
         print_money(total_sent) %
         ((unsigned long long)ptx_vector.size()) %
         print_money(total_fee)).str();
     }
     else {
-      prompt_str = (boost::format(tr("Sweeping %s for a total fee of %s.  Is this okay?  (Y/Yes/N/No)")) %
+      prompt_str = (boost::format(tr("Sweeping %s for a total fee of %s.  Is this okay?  [y/N]")) %
         print_money(total_sent) %
         print_money(total_fee)).str();
     }
     std::string accepted = command_line::input_line(prompt_str);
     if (std::cin.eof())
       return true;
-    if (accepted != "Y" && accepted != "y" && accepted != "Yes" && accepted != "yes")
+    if (!is_it_true(accepted))
     {
       fail_msg_writer() << tr("transaction cancelled.");
 
@@ -3193,7 +3195,7 @@ bool simple_wallet::accept_loaded_tx(const std::function<size_t()> get_num_txes,
     dest_string = tr("with no destinations");
 
   uint64_t fee = amount - amount_to_dests;
-  std::string prompt_str = (boost::format(tr("Loaded %lu transactions, for %s, fee %s, change %s, %s, with min mixin %lu. Is this okay? (Y/Yes/N/No)")) % (unsigned long)get_num_txes() % print_money(amount) % print_money(fee) % print_money(change) % dest_string % (unsigned long)min_mixin).str();
+  std::string prompt_str = (boost::format(tr("Loaded %lu transactions, for %s, fee %s, change %s, %s, with min mixin %lu. Is this okay? [y/N]")) % (unsigned long)get_num_txes() % print_money(amount) % print_money(fee) % print_money(change) % dest_string % (unsigned long)min_mixin).str();
   std::string accepted = command_line::input_line(prompt_str);
   return is_it_true(accepted);
 }
@@ -3281,12 +3283,11 @@ bool simple_wallet::submit_transfer(const std::vector<std::string> &args_)
         if (dust_in_fee != 0) prompt << boost::format(tr(", of which %s is dust from change")) % print_money(dust_in_fee);
         if (dust_not_in_fee != 0)  prompt << tr(".") << ENDL << boost::format(tr("A total of %s from dust change will be sent to dust address"))
                                                    % print_money(dust_not_in_fee);
-        prompt << tr(".") << ENDL << "Full transaction details are available in the log file" << ENDL << tr("Is this okay?  (Y/Yes/N/No)");
-
+        prompt << tr(".") << ENDL << "Full transaction details are available in the log file" << ENDL << tr("Is this okay? [y/N]");
         std::string accepted = command_line::input_line(prompt.str());
         if (std::cin.eof())
           return true;
-        if (accepted != "Y" && accepted != "y" && accepted != "Yes" && accepted != "yes")
+        if (!is_it_true(accepted))
         {
           fail_msg_writer() << tr("transaction cancelled.");
 
