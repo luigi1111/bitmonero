@@ -149,6 +149,20 @@ namespace rct {
             i++;
         }
     }
+
+    //uint long long to (up to) int[32] (base 4)
+    void d2b4(borroIndices amounti, xmr_amount val) {
+        unsigned int i = 0;
+        while (val != 0) {
+            amounti[i] = val & 3;
+            i++;
+            val >>= 2;
+        }
+        while (i < amounti.size()) {
+            amounti[i] = 0;
+            i++;
+        }
+    }
     
     //32 byte key to uint long long
     // if the key holds a value > 2^64

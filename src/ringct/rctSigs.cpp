@@ -40,7 +40,11 @@ using namespace crypto;
 using namespace std;
 
 namespace rct {
+    //begin range proof code
     //Borromean (c.f. gmax/andytoshi's paper)
+    //this version is only compatible with base2, length 64 (extensible version below)
+    //x is a vector of secret keys, P1 is a vector of commitments (Ci),
+    //P2 is a vector of (Ci[i] - H2[i]), indices is committed amount (0 or 2^i) for each Ci
     boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices) {
         key64 L[2], alpha;
         key c;
@@ -84,6 +88,240 @@ namespace rct {
         return equalKeys(eeComputed, bb.ee);
     }
 
+    //extensible version (for base 4)
+    //x is vector of secret keys of size (nrings)
+    //PM is a matrix of pubkeys of size (size, nrings)
+    //indices is committed amount (0 or base^i) for each Ci
+    //size/columns is "mixin", or the base we are proving (4 is most efficient)
+    //nrings/rows is range we can prove (base^nrings, 4^32 matches the former 2^64)
+    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings) {
+        keyV alphas(nrings);
+        keyM L(size, alphas);
+        key c;
+        borroSigE bb;
+        bb.s = keyM(size, alphas);
+        size_t index, i, j;
+        //for each row, start at secret index and compute to last column
+        for (i = 0; i < nrings; i++) {
+            index = indices[i];
+            skGen(alphas[i]);
+            scalarmultBase(L[index][i], alphas[i]);
+            for (j = index + 1; j < size; j++) {
+                skGen(bb.s[j][i]);
+                c = hash_to_scalar(L[j-1][i]);
+                addKeys2(L[j][i], bb.s[j][i], c, PM[j][i]);
+            }
+        }
+        bb.ee = hash_to_scalar(L[size-1]); //hash last column to create "c seed";
+        key LL, cc;
+        //for each row, start at 0 and compute to secret index
+        for (i = 0; i < nrings; i++) {
+            copy(cc, bb.ee);
+            for (j = 0; j < indices[i]; j++) {
+                skGen(bb.s[j][i]);
+                addKeys2(LL, bb.s[j][i], cc, PM[j][i]);
+                cc = hash_to_scalar(LL);
+            }
+            sc_mulsub(bb.s[j][i].bytes, x[i].bytes, cc.bytes, alphas[i].bytes);
+        }
+        return bb;
+    }
+    
+    //see above.
+    bool verifyBorromeanE(const borroSigE& bb, const keyM PM) {
+        key LL, c;
+        keyV Lv(bb.s[0].size());
+        size_t i, j;
+        //for each row, compute from index 0 - size/columns
+        for (i = 0; i < Lv.size(); i++) {
+            copy(c, bb.ee);
+            for (j = 0; j < bb.s.size() - 1; j++) {
+                addKeys2(LL, bb.s[j][i], c, PM[j][i]);
+                c = hash_to_scalar(LL);
+            }
+            addKeys2(Lv[i], bb.s[j][i], c, PM[j][i]);
+        }
+        //hash last column to check for equality with seed (bb.ee)
+        key eeC = hash_to_scalar(Lv);
+        sc_sub(c.bytes, eeC.bytes, bb.ee.bytes);
+        return sc_isnonzero(c.bytes);
+    }
+
+    //proveRange and verRange
+    //proveRange gives C, and mask such that \sumCi = C
+    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
+    //   thus this proves that "amount" is in [0, 2^64]
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
+    rangeSig proveRange(key& C, key& mask, const xmr_amount& amount) {
+        sc_0(mask.bytes);
+        identity(C);
+        bits b;
+        d2b(b, amount);
+        rangeSig sig;
+        key64 ai;
+        key64 CiH;
+        int i = 0;
+        for (i = 0; i < ATOMS; i++) {
+            skGen(ai[i]);
+            if (b[i] == 0) {
+                scalarmultBase(sig.Ci[i], ai[i]);
+            }
+            if (b[i] == 1) {
+                addKeys1(sig.Ci[i], ai[i], H2[i]);
+            }
+            subKeys(CiH[i], sig.Ci[i], H2[i]);
+            sc_add(mask.bytes, mask.bytes, ai[i].bytes);
+            addKeys(C, C, sig.Ci[i]);
+        }
+        sig.asig = genBorromean(ai, sig.Ci, CiH, b);
+        return sig;
+    }
+
+    //proveRange and verRange
+    //proveRange gives C, and mask such that \sumCi = C
+    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
+    //   thus this proves that "amount" is in [0, 2^64]
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
+    bool verRange(const key& C, const rangeSig& as) {
+      try
+      {
+        PERF_TIMER(verRange);
+        key64 CiH;
+        int i = 0;
+        key Ctmp = identity();
+        for (i = 0; i < 64; i++) {
+            subKeys(CiH[i], as.Ci[i], H2[i]);
+            addKeys(Ctmp, Ctmp, as.Ci[i]);
+        }
+        if (!equalKeys(C, Ctmp))
+          return false;
+        if (!verifyBorromean(as.asig, as.Ci, CiH))
+          return false;
+        return true;
+      }
+      // we can get deep throws from ge_frombytes_vartime if input isn't valid
+      catch (...) { return false; }
+    }
+
+    //proveRangeE and verRangeE
+    //proveRangeE gives C, and mask such that \sumCi = C
+    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or s^i, i=0,...,n
+    //   thus this proves that "amount" is in [0, s^n] (we assume s to be 4)
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRangeE reconstructs last Ci = C - (\sum Ci)
+    //   and verifies that each Ci is a commitment to s^i*(0,...,s)
+    rangeSigE proveRangeE(key& C, key& mask, const xmr_amount& amount, const unsigned int nrings, const unsigned int exponent) {
+        sc_0(mask.bytes);
+        identity(C);
+        borroIndices indices(nrings);
+        d2b4(indices, amount);
+        const unsigned int size = 4; //base 4 is most efficient
+        rangeSigE sig;
+        sig.Ci = keyV(nrings - 1); //we elide last Ci
+        sig.exp = exponent; //0 for now, need an sc_mul function to actually use (see below)
+        keyV ai(nrings);
+        keyM PM(size, ai);
+        unsigned int i, j;
+        //start at index and fill PM left and right -- PM[0] holds Ci
+        for (i = 0; i < nrings; i++) {
+            skGen(ai[i]);
+            scalarmultBase(PM[indices[i]][i], ai[i]);
+            j = indices[i];
+            while (j > 0) {
+                j--;
+                addKeys(PM[j][i], PM[j+1][i], H2[i*2]); //H2[i*2] lets us use H2 object with base4
+            }
+            j = indices[i];
+            while (j < size - 1) {
+                j++;
+                subKeys(PM[j][i], PM[j-1][i], H2[i*2]);
+            }
+            sc_add(mask.bytes, mask.bytes, ai[i].bytes); //sum the masks
+        }
+        //copy commitments to sig and sum them to commitment
+        for (i = 0; i < nrings; i++) {
+            if (i < nrings - 1) //do not copy last Ci
+                copy(sig.Ci[i], PM[0][i]);
+            addKeys(C, C, PM[0][i]);
+        }
+        /*
+        *sample exp code
+        if (sig.exp) {
+            unsigned int e = 0;
+            uint64_t n = 10;
+            while (e < sig.exp) { //need pow()
+                n *= 10;
+                e++;
+            }
+            scalarmultKey(C, d2h(n));
+            sc_mul(mask.bytes, masks.bytes, d2h(n).bytes); //does not exist ATM
+        }*/
+        sig.bsig = genBorromeanE(ai, PM, indices, size, nrings);
+        return sig;
+    }
+
+    //proveRangeE and verRangeE
+    //proveRangeE gives C, and mask such that \sumCi = C
+    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or s^i, i=0,...,n
+    //   thus this proves that "amount" is in [0, s^n] (we assume s to be 4)
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRangeE reconstructs last Ci = C - (\sum Ci)
+    //   and verifies that each Ci is a commitment to s^i*(0,...,s)
+    bool verRangeE(key& C, const rangeSigE& as) {
+      try
+      {
+        //checks on bsig.s matrix size, Ci size (nrings-1), and exp value should be done upstack based on protocol values
+        PERF_TIMER(verRange);
+        unsigned int size = as.bsig.s.size(), length = as.bsig.s[0].size();
+        keyV tmp(length);
+        keyM PM(size, tmp);
+        key Ctmp = identity(); //we don't check against commitment, but use this to reconstruct last Ci
+        unsigned int i, j;
+        for (i = 0; i < length; i++) {
+            j = 0;
+            if (i < length - 1) {
+                copy(PM[j][i], as.Ci[i]); //Ci goes in 1st column (j=0)
+                addKeys(Ctmp, Ctmp, as.Ci[i]);
+            }
+            if (i == length - 1)
+                subKeys(PM[j][i], C, Ctmp); //reconstruct last Ci
+            j++;
+            while (j < size) {
+                subKeys(PM[j][i], PM[j-1][i], H2[i*2]); //create the rest of the matrix
+                j++;
+            }
+        }
+        /*
+        *sample exp code
+        if (as.exp) {
+            unsigned int e = 0;
+            uint64_t n = 10;
+            while (e < as.exp) {
+                n *= 10;
+                e++;
+            }
+            scalarmultKey(C, C, d2h(n)); <- new commitment (to be stored in blockchain/used for sumin - sumout) if exponent is non-zero
+        }*/
+        /*if (!equalKeys(C, Ctmp)) <- no need to check equality if reconstructing
+          return false;
+        if (!verifyBorromean(as.asig, as.Ci, CiH))
+          return false;
+        return true;*/
+        return verifyBorromeanE(as.bsig, PM);
+      }
+      // we can get deep throws from ge_frombytes_vartime if input isn't valid
+      catch (...) { return false; }
+    }
+    //end range proof code
+    
+
+    //begin MLSAG code
     //Multilayered Spontaneous Anonymous Group Signatures (MLSAG signatures)
     //These are aka MG signatutes in earlier drafts of the ring ct paper
     // c.f. http://eprint.iacr.org/2015/1098 section 2. 
@@ -254,68 +492,6 @@ namespace rct {
         return sc_isnonzero(c.bytes) == 0;  
     }
     
-
-
-    //proveRange and verRange
-    //proveRange gives C, and mask such that \sumCi = C
-    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
-    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
-    //   thus this proves that "amount" is in [0, 2^64]
-    //   mask is a such that C = aG + bH, and b = amount
-    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
-    rangeSig proveRange(key & C, key & mask, const xmr_amount & amount) {
-        sc_0(mask.bytes);
-        identity(C);
-        bits b;
-        d2b(b, amount);
-        rangeSig sig;
-        key64 ai;
-        key64 CiH;
-        int i = 0;
-        for (i = 0; i < ATOMS; i++) {
-            skGen(ai[i]);
-            if (b[i] == 0) {
-                scalarmultBase(sig.Ci[i], ai[i]);
-            }
-            if (b[i] == 1) {
-                addKeys1(sig.Ci[i], ai[i], H2[i]);
-            }
-            subKeys(CiH[i], sig.Ci[i], H2[i]);
-            sc_add(mask.bytes, mask.bytes, ai[i].bytes);
-            addKeys(C, C, sig.Ci[i]);
-        }
-        sig.asig = genBorromean(ai, sig.Ci, CiH, b);
-        return sig;
-    }
-
-    //proveRange and verRange
-    //proveRange gives C, and mask such that \sumCi = C
-    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
-    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
-    //   thus this proves that "amount" is in [0, 2^64]
-    //   mask is a such that C = aG + bH, and b = amount
-    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
-    bool verRange(const key & C, const rangeSig & as) {
-      try
-      {
-        PERF_TIMER(verRange);
-        key64 CiH;
-        int i = 0;
-        key Ctmp = identity();
-        for (i = 0; i < 64; i++) {
-            subKeys(CiH[i], as.Ci[i], H2[i]);
-            addKeys(Ctmp, Ctmp, as.Ci[i]);
-        }
-        if (!equalKeys(C, Ctmp))
-          return false;
-        if (!verifyBorromean(as.asig, as.Ci, CiH))
-          return false;
-        return true;
-      }
-      // we can get deep throws from ge_frombytes_vartime if input isn't valid
-      catch (...) { return false; }
-    }
-
     key get_pre_mlsag_hash(const rctSig &rv)
     {
       keyV hashes;
@@ -499,6 +675,7 @@ namespace rct {
         }
         catch (...) { return false; }
     }
+    //end MLSAG code
 
 
     //These functions get keys from blockchain

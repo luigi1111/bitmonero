@@ -122,15 +122,58 @@ namespace rct {
 
     //containers for representing amounts
     typedef uint64_t xmr_amount;
-    typedef unsigned int bits[ATOMS];
+    typedef unsigned int bits[ATOMS]; //binary
+    typedef vector<unsigned int> borroIndices; //base 4
+    
     typedef key key64[64];
 
+    //Borromean signature for "mixin":1, length:64
     struct boroSig {
         key64 s0;
         key64 s1;
         key ee;
     };
-  
+
+    //extensible
+    struct borroSigE {
+        keyM s;
+        key ee;
+    };
+
+    //contains the data for a Borromean sig
+    // also contains the "Ci" values such that
+    // \sum Ci = C
+    // and the signature proves that each Ci is either
+    // a Pedersen commitment to 0 or to 2^i
+    //thus proving that C is in the range of [0, 2^64]
+    struct rangeSig {
+        boroSig asig;
+        key64 Ci;
+
+        BEGIN_SERIALIZE_OBJECT()
+            FIELD(asig)
+            FIELD(Ci)
+        END_SERIALIZE()
+    };
+
+    //allows to use base 4, and any size range
+    //rather than just 0,2^64
+    //includes an exponent so we can prove larger
+    //amounts with smaller ranges
+    //exp is used as 10^exp
+    //we elide last Ci and reconstruct (see proveRangeE and verRangeE)
+    struct rangeSigE {
+        borroSigE bsig;
+        keyV Ci;
+        uint8_t exp;
+
+        BEGIN_SERIALIZE_OBJECT()
+            FIELD(bsig)
+            FIELD(Ci)
+            FIELD(exp)
+        END_SERIALIZE()
+    };
+
     //Container for precomp
     struct geDsmp {
         ge_dsmp k;
@@ -149,21 +192,7 @@ namespace rct {
             // FIELD(II) - not serialized, it can be reconstructed
         END_SERIALIZE()
     };
-    //contains the data for an Borromean sig
-    // also contains the "Ci" values such that
-    // \sum Ci = C
-    // and the signature proves that each Ci is either
-    // a Pedersen commitment to 0 or to 2^i
-    //thus proving that C is in the range of [0, 2^64]
-    struct rangeSig {
-        boroSig asig;
-        key64 Ci;
 
-        BEGIN_SERIALIZE_OBJECT()
-            FIELD(asig)
-            FIELD(Ci)
-        END_SERIALIZE()
-    };
     //A container to hold all signatures necessary for RingCT
     // rangeSigs holds all the rangeproof data of a transaction
     // MG holds the MLSAG signature of a transaction
@@ -403,6 +432,7 @@ namespace rct {
     void dp(xmr_amount vali);
     void dp(int vali);
     void dp(bits amountb);
+    void dp(borroIndices amounti);
     void dp(const char * st);
 
     //various conversions
@@ -412,6 +442,8 @@ namespace rct {
     key d2h(xmr_amount val);
     //uint long long to int[64]
     void d2b(bits  amountb, xmr_amount val);
+    //uint long long to (up to) int[32] (base 4)
+    void d2b4(borroIndices amounti, xmr_amount val);
     //32 byte key to uint long long
     // if the key holds a value > 2^64
     // then the value in the first 8 bytes is returned
@@ -462,7 +494,9 @@ VARIANT_TAG(debug_archive, rct::ctkeyM, "rct::ctkeyM");
 VARIANT_TAG(debug_archive, rct::ecdhTuple, "rct::ecdhTuple");
 VARIANT_TAG(debug_archive, rct::mgSig, "rct::mgSig");
 VARIANT_TAG(debug_archive, rct::rangeSig, "rct::rangeSig");
+VARIANT_TAG(debug_archive, rct::rangeSigE, "rct::rangeSigE");
 VARIANT_TAG(debug_archive, rct::boroSig, "rct::boroSig");
+VARIANT_TAG(debug_archive, rct::borroSigE, "rct::borroSigE");
 VARIANT_TAG(debug_archive, rct::rctSig, "rct::rctSig");
 
 VARIANT_TAG(binary_archive, rct::key, 0x90);
@@ -477,6 +511,8 @@ VARIANT_TAG(binary_archive, rct::mgSig, 0x98);
 VARIANT_TAG(binary_archive, rct::rangeSig, 0x99);
 VARIANT_TAG(binary_archive, rct::boroSig, 0x9a);
 VARIANT_TAG(binary_archive, rct::rctSig, 0x9b);
+VARIANT_TAG(binary_archive, rct::rangeSigE, 0x9c);
+VARIANT_TAG(binary_archive, rct::borroSigE, 0x9d);
 
 VARIANT_TAG(json_archive, rct::key, "rct_key");
 VARIANT_TAG(json_archive, rct::key64, "rct_key64");
@@ -488,7 +524,9 @@ VARIANT_TAG(json_archive, rct::ctkeyM, "rct_ctkeyM");
 VARIANT_TAG(json_archive, rct::ecdhTuple, "rct_ecdhTuple");
 VARIANT_TAG(json_archive, rct::mgSig, "rct_mgSig");
 VARIANT_TAG(json_archive, rct::rangeSig, "rct_rangeSig");
+VARIANT_TAG(json_archive, rct::rangeSigE, "rct_rangeSigE");
 VARIANT_TAG(json_archive, rct::boroSig, "rct_boroSig");
+VARIANT_TAG(json_archive, rct::borroSigE, "rct_borroSigE");
 VARIANT_TAG(json_archive, rct::rctSig, "rct_rctSig");
 
 #endif  /* RCTTYPES_H */

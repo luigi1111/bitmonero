@@ -66,8 +66,28 @@ using namespace crypto;
 
 namespace rct {
 
+    //genBorromean and verifyBorromean
+    //called by proveRange and verRange
     boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices);
     bool verifyBorromean(const boroSig &bb, const key64 P1, const key64 P2);
+    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings);
+    bool verifyBorromeanE(const borroSigE& bb, const keyM P);
+
+    //proveRange and verRange
+    //proveRange gives C, and mask such that \sumCi = C
+    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
+    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
+    //   thus this proves that "amount" is in [0, 2^64]
+    //   mask is a such that C = aG + bH, and b = amount
+    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
+    rangeSig proveRange(key& C, key& mask, const xmr_amount& amount);
+    bool verRange(const key& C, const rangeSig& as);
+
+    //same as above but extensible
+    //uses base4 and varying length (nrings)
+    //C is not const because it supports base 10 exponents
+    rangeSigE proveRangeE(key& C, key& mask, const xmr_amount& amount, const unsigned int nrings, const unsigned int exponent = 0);
+    bool verRangeE(key& C, const rangeSig& as);
 
     //Multilayered Spontaneous Anonymous Group Signatures (MLSAG signatures)
     //These are aka MG signatutes in earlier drafts of the ring ct paper
@@ -80,16 +100,6 @@ namespace rct {
     mgSig MLSAG_Gen(const key &message, const keyM & pk, const keyV & xx, const unsigned int index, size_t dsRows);
     bool MLSAG_Ver(const key &message, const keyM &pk, const mgSig &sig, size_t dsRows);
     //mgSig MLSAG_Gen_Old(const keyM & pk, const keyV & xx, const int index);
-
-    //proveRange and verRange
-    //proveRange gives C, and mask such that \sumCi = C
-    //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
-    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
-    //   thus this proves that "amount" is in [0, 2^64]
-    //   mask is a such that C = aG + bH, and b = amount
-    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
-    rangeSig proveRange(key & C, key & mask, const xmr_amount & amount);
-    bool verRange(const key & C, const rangeSig & as);
 
     //Ring-ct MG sigs
     //Prove:
