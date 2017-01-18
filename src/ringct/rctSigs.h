@@ -89,7 +89,7 @@ namespace rct {
     //enc_seed is seed for encrypting payload
     //payload is data to encrypt in range proof (ecdhInfo in typical case)
     //2 x 32 will be returned to be added to sig as ecdhInfo (and thus be unprunable)
-    void genSeeds(keyM& seeds, key& enc_seed);
+    //void genSeeds(keyM& seeds, key& enc_seed);
     rangeSigE proveRangeE(key& C, key& real_C, key& mask, const xmr_amount& amount, const unsigned int nrings, key& enc_seed, keyM& payload, const unsigned int exponent = 0);
     bool verRangeE(key& C, const rangeSig& as);
 

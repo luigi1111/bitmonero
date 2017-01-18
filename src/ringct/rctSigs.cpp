@@ -105,17 +105,17 @@ namespace rct {
         for (i = 0; i < nrings; i++) {
             index = indices[i];
             //skGen(alphas[i]);
-            if (i < pl && index < ps) {
+            /*if (i < pl && index < ps) {
                 copy(alphas[i], payload[index][i]); //copy alpha from payload, if it exists
-            } else {
+            } else*/ {
                 skGen(alphas[i]);
             }
             scalarmultBase(L[index][i], alphas[i]);
             for (j = index + 1; j < size; j++) {
                 //skGen(bb.s[j][i]);
-                if (i < pl && j < ps) {
+                /*if (i < pl && j < ps) {
                     copy(bb.s[j][i], payload[j][i]); //copy s from payload, if it exists
-                } else {
+                } else*/ {
                     skGen(bb.s[j][i]);
                 }
                 c = hash_to_scalar(L[j-1][i]);
@@ -129,9 +129,9 @@ namespace rct {
             copy(cc, bb.ee);
             for (j = 0; j < indices[i]; j++) {
                 //skGen(bb.s[j][i]);
-                if (i < pl && j < ps) {
+                /*if (i < pl && j < ps) {
                     copy(bb.s[j][i], payload[j][i]); //copy s from payload, if it exists
-                } else {
+                } else*/ {
                     skGen(bb.s[j][i]);
                 }
                 addKeys2(LL, bb.s[j][i], cc, PM[j][i]);
@@ -223,7 +223,7 @@ namespace rct {
     }
 
     //no chance this works as-is
-    void genSeeds(keyM& seeds, key& enc_seed) {
+    /*void genSeeds(keyM& seeds, key& enc_seed) {
         char data[33];
         memcpy(data, &enc_seed, 32);
         size_t i, j;
@@ -233,7 +233,7 @@ namespace rct {
                 seeds[i][j] = hash_to_scalar(data);
             }
         }
-    }
+    }*/
 
     //proveRangeE and verRangeE
     //proveRangeE gives C, and mask such that \sumCi = C
@@ -263,8 +263,8 @@ namespace rct {
         sig.Ci = keyV(nrings - 1); //we elide last Ci
         sig.exp = exponent; //0 for now, need an sc_mul function to actually use (see below)
         keyV seedTmp(payload[0].size()); //should be 1
-        keyM seeds((payload.size() + 1, seedTmp); //should be 3
-        genSeeds(seeds, enc_seed);
+        /*keyM seeds(payload.size() + 1, seedTmp); //should be 3
+        genSeeds(seeds, enc_seed);*/
         keyV ai(nrings);
         keyM PM(size, ai);
         unsigned int i, j;
@@ -272,9 +272,9 @@ namespace rct {
         for (i = 0; i < nrings; i++) {
             //skGen(ai[i]);
 
-            if (i == 0) {
+            /*if (i == 0) {
                 copy(ai[i], seeds[0][i]); //copy mask alpha for ecdhInfo
-            } else {
+            } else*/ {
                 skGen(ai[i]);
             }
             j = indices[i];
@@ -290,14 +290,14 @@ namespace rct {
             }
             sc_add(mask.bytes, mask.bytes, ai[i].bytes); //sum the masks
         }
-        copy(payload[0][0], mask);
+        /*copy(payload[0][0], mask);
         copy(payload[1][0], d2h(amount));
         //obscure payload with scalars in seeds
         for (i = 0; i < payload.size(); i++) {
             for (j = 0; j < payload[i].size(); j++) {
                 sc_add(payload[i][j].bytes, seeds[i+1][j].bytes, payload[i][j].bytes); //seeds[0] holds mask alphas
             }
-        }
+        }*/
         //copy commitments to sig and sum them to commitment
         for (i = 0; i < nrings; i++) {
             if (i < nrings - 1) //do not copy last Ci
