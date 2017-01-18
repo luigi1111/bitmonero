@@ -70,7 +70,7 @@ namespace rct {
     //called by proveRange and verRange
     boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices);
     bool verifyBorromean(const boroSig &bb, const key64 P1, const key64 P2);
-    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings);
+    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings, const keyM& payload);
     bool verifyBorromeanE(const borroSigE& bb, const keyM P);
 
     //proveRange and verRange
@@ -86,7 +86,11 @@ namespace rct {
     //same as above but extensible
     //uses base4 and varying length (nrings)
     //C is not const because it supports base 10 exponents
-    rangeSigE proveRangeE(key& C, key& mask, const xmr_amount& amount, const unsigned int nrings, const unsigned int exponent = 0);
+    //enc_seed is seed for encrypting payload
+    //payload is data to encrypt in range proof (ecdhInfo in typical case)
+    //2 x 32 will be returned to be added to sig as ecdhInfo (and thus be unprunable)
+    void genSeeds(keyM& seeds, key& enc_seed);
+    rangeSigE proveRangeE(key& C, key& real_C, key& mask, const xmr_amount& amount, const unsigned int nrings, key& enc_seed, keyM& payload, const unsigned int exponent = 0);
     bool verRangeE(key& C, const rangeSig& as);
 
     //Multilayered Spontaneous Anonymous Group Signatures (MLSAG signatures)
@@ -142,6 +146,7 @@ namespace rct {
     xmr_amount decodeRct(const rctSig & rv, const key & sk, unsigned int i);
     xmr_amount decodeRctSimple(const rctSig & rv, const key & sk, unsigned int i, key & mask);
     xmr_amount decodeRctSimple(const rctSig & rv, const key & sk, unsigned int i);
+    //xmr_amount decodeRctNew(const rctSig& rv, const key& sk, unsigned int i, key& mask);
 }
 #endif  /* RCTSIGS_H */
 

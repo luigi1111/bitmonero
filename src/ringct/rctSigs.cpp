@@ -94,20 +94,30 @@ namespace rct {
     //indices is committed amount (0 or base^i) for each Ci
     //size/columns is "mixin", or the base we are proving (4 is most efficient)
     //nrings/rows is range we can prove (base^nrings, 4^32 matches the former 2^64)
-    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings) {
+    borroSigE genBorromeanE(const keyV x, const keyM PM, const borroIndices indices, const unsigned int size, const unsigned int nrings, const keyM& payload) {
         keyV alphas(nrings);
         keyM L(size, alphas);
         key c;
         borroSigE bb;
         bb.s = keyM(size, alphas);
-        size_t index, i, j;
+        unsigned int index, i, j, ps = payload.size(), pl = payload[0].size();
         //for each row, start at secret index and compute to last column
         for (i = 0; i < nrings; i++) {
             index = indices[i];
-            skGen(alphas[i]);
+            //skGen(alphas[i]);
+            if (i < pl && index < ps) {
+                copy(alphas[i], payload[index][i]); //copy alpha from payload, if it exists
+            } else {
+                skGen(alphas[i]);
+            }
             scalarmultBase(L[index][i], alphas[i]);
             for (j = index + 1; j < size; j++) {
-                skGen(bb.s[j][i]);
+                //skGen(bb.s[j][i]);
+                if (i < pl && j < ps) {
+                    copy(bb.s[j][i], payload[j][i]); //copy s from payload, if it exists
+                } else {
+                    skGen(bb.s[j][i]);
+                }
                 c = hash_to_scalar(L[j-1][i]);
                 addKeys2(L[j][i], bb.s[j][i], c, PM[j][i]);
             }
@@ -118,7 +128,12 @@ namespace rct {
         for (i = 0; i < nrings; i++) {
             copy(cc, bb.ee);
             for (j = 0; j < indices[i]; j++) {
-                skGen(bb.s[j][i]);
+                //skGen(bb.s[j][i]);
+                if (i < pl && j < ps) {
+                    copy(bb.s[j][i], payload[j][i]); //copy s from payload, if it exists
+                } else {
+                    skGen(bb.s[j][i]);
+                }
                 addKeys2(LL, bb.s[j][i], cc, PM[j][i]);
                 cc = hash_to_scalar(LL);
             }
@@ -131,7 +146,7 @@ namespace rct {
     bool verifyBorromeanE(const borroSigE& bb, const keyM PM) {
         key LL, c;
         keyV Lv(bb.s[0].size());
-        size_t i, j;
+        unsigned int i, j;
         //for each row, compute from index 0 - size/columns
         for (i = 0; i < Lv.size(); i++) {
             copy(c, bb.ee);
@@ -207,6 +222,19 @@ namespace rct {
       catch (...) { return false; }
     }
 
+    //no chance this works as-is
+    void genSeeds(keyM& seeds, key& enc_seed) {
+        char data[33];
+        memcpy(data, &enc_seed, 32);
+        size_t i, j;
+        for (i = 0; i < seeds.size(); i++) {
+            for (j = 0; j < seeds[i].size(); j++) {
+                data[32] = i * 5 + j;
+                seeds[i][j] = hash_to_scalar(data);
+            }
+        }
+    }
+
     //proveRangeE and verRangeE
     //proveRangeE gives C, and mask such that \sumCi = C
     //   c.f. http://eprint.iacr.org/2015/1098 section 5.1
@@ -215,23 +243,42 @@ namespace rct {
     //   mask is a such that C = aG + bH, and b = amount
     //verRangeE reconstructs last Ci = C - (\sum Ci)
     //   and verifies that each Ci is a commitment to s^i*(0,...,s)
-    rangeSigE proveRangeE(key& C, key& mask, const xmr_amount& amount, const unsigned int nrings, const unsigned int exponent) {
-        sc_0(mask.bytes);
-        identity(C);
+    /*
+    *brief - enc_seed and payload
+    * enc_seed is the amount_key used to encrypt ecdhInfo in v2 txs
+    * we hash it + tail enough times to create deterministic alphas
+    * (known to those with knowledge of view key of recipient)
+    * with knowledge of the alphas, the proof can be "unwound",
+    * allowing for passage of encrypted data
+    * 1st column contains deterministic mask alpha(s) as needed
+    * subsequent (up to 4 extra) contains deterministic signature alphas/s
+    */
+    rangeSigE proveRangeE(key& C, key& C_real, key& mask, const xmr_amount& amount, const unsigned int nrings, key& enc_seed, keyM& payload, const unsigned int exponent) {
+        const unsigned int size = 4; //base 4 is most efficient
         borroIndices indices(nrings);
         d2b4(indices, amount);
-        const unsigned int size = 4; //base 4 is most efficient
+        sc_0(mask.bytes);
+        identity(C);
         rangeSigE sig;
         sig.Ci = keyV(nrings - 1); //we elide last Ci
         sig.exp = exponent; //0 for now, need an sc_mul function to actually use (see below)
+        keyV seedTmp(payload[0].size()); //should be 1
+        keyM seeds((payload.size() + 1, seedTmp); //should be 3
+        genSeeds(seeds, enc_seed);
         keyV ai(nrings);
         keyM PM(size, ai);
         unsigned int i, j;
         //start at index and fill PM left and right -- PM[0] holds Ci
         for (i = 0; i < nrings; i++) {
-            skGen(ai[i]);
-            scalarmultBase(PM[indices[i]][i], ai[i]);
+            //skGen(ai[i]);
+
+            if (i == 0) {
+                copy(ai[i], seeds[0][i]); //copy mask alpha for ecdhInfo
+            } else {
+                skGen(ai[i]);
+            }
             j = indices[i];
+            scalarmultBase(PM[j][i], ai[i]);
             while (j > 0) {
                 j--;
                 addKeys(PM[j][i], PM[j+1][i], H2[i*2]); //H2[i*2] lets us use H2 object with base4
@@ -242,6 +289,14 @@ namespace rct {
                 subKeys(PM[j][i], PM[j-1][i], H2[i*2]);
             }
             sc_add(mask.bytes, mask.bytes, ai[i].bytes); //sum the masks
+        }
+        copy(payload[0][0], mask);
+        copy(payload[1][0], d2h(amount));
+        //obscure payload with scalars in seeds
+        for (i = 0; i < payload.size(); i++) {
+            for (j = 0; j < payload[i].size(); j++) {
+                sc_add(payload[i][j].bytes, seeds[i+1][j].bytes, payload[i][j].bytes); //seeds[0] holds mask alphas
+            }
         }
         //copy commitments to sig and sum them to commitment
         for (i = 0; i < nrings; i++) {
@@ -258,10 +313,13 @@ namespace rct {
                 n *= 10;
                 e++;
             }
-            scalarmultKey(C, d2h(n));
+            scalarmultKey(C_real, C, d2h(n));
             sc_mul(mask.bytes, masks.bytes, d2h(n).bytes); //does not exist ATM
-        }*/
-        sig.bsig = genBorromeanE(ai, PM, indices, size, nrings);
+        } else {
+            copy(C_real, C);
+        }
+        */
+        sig.bsig = genBorromeanE(ai, PM, indices, size, nrings, payload);
         return sig;
     }
 
@@ -829,7 +887,20 @@ namespace rct {
          #ifdef DBG
              verRange(rv.outPk[i].mask, rv.p.rangeSigs[i]);
          #endif
-         
+
+            /*
+            *use ecdhInfo as part of the range proof to save some bytes
+            *matrix can be at most size (4) x nrings (4 x 32 in max case (128 * ~31 bytes))
+            *as they are all scalars, they can't be > ~2^252 or 31.5 bytes each
+            keyV tmpData(1);
+            //data to encrypt, can be more than just 2x32 bytes
+            //really just a reserve, as amount and mask are already passed and generated internally, respectively
+            keyM ecdhTemp(2, tmpData);
+            key C_real;
+            rv.p.rangeSigs[i] = proveRangeE(rv.outPk[i].mask, C_real, outSk[i].mask, outamounts[i], nrings, amount_keys[i], ecdhTemp);
+            rv.ecdhInfo[i].mask = copy(rv.p.rangeSigs[i].bsig.s[0][0]); //ecdhTemp[0][0]);
+            rv.ecdhInfo[i].amount = copy(rv.p.rangeSigs[i].bsig.s[1][0]); //ecdhTemp[0][1]);
+            */
             sc_add(sumout.bytes, outSk[i].mask.bytes, sumout.bytes);
 
             //mask amount and mask
@@ -856,6 +927,19 @@ namespace rct {
         sc_sub(a[i].bytes, sumout.bytes, sumpouts.bytes);
         genC(rv.pseudoOuts[i], a[i], inamounts[i]);
         DP(rv.pseudoOuts[i]);
+        /*
+     #ifdef DBG
+         sumpouts = identity();
+         for (i = 0 ; i < inamounts.size(); i++) {
+             addKeys(sumpouts, sumpouts, rv.pseudoOuts[i]);
+         }
+         sumout = identity();
+         for (i = 0 ; i < destinations.size(); i++) {
+             addKeys(sumout, sumout, rv.p.rangeSigs[i].mask);
+         }
+         CHECK_AND_ASSERT_THROW_MES(equalKeys(sumpouts, sumout), "Sumout != sumin, something wrong with exponent code?");
+      #endif
+         */
 
         key full_message = get_pre_mlsag_hash(rv);
         for (i = 0 ; i < inamounts.size(); i++) {
@@ -947,6 +1031,14 @@ namespace rct {
         CHECK_AND_ASSERT_MES(rv.pseudoOuts.size() == rv.p.MGs.size(), false, "Mismatched sizes of rv.pseudoOuts and rv.p.MGs");
         CHECK_AND_ASSERT_MES(rv.pseudoOuts.size() == rv.mixRing.size(), false, "Mismatched sizes of rv.pseudoOuts and mixRing");
 
+        /* add edchInfo to range proofs 
+        * we do this because they are part of the range proof and are kept separate for pruning reasons
+        * note de/serialization of bsig will not be rectangular, as first row of columns 0,1 should be dropped
+        for (size_t i = 0; i < rv.p.rangeSigs.size(); i++) {
+            rv.p.rangeSigs[i].bsig.s[0].push_front(rv.ecdhInfo[i].mask);
+            rv.p.rangeSigs[i].bsig.s[1].push_front(rv.ecdhInfo[i].amount);
+        }
+        */
         const size_t threads = std::max(rv.outPk.size(), rv.mixRing.size());
 
         std::deque<bool> results(threads);
@@ -1081,4 +1173,87 @@ namespace rct {
       key mask;
       return decodeRctSimple(rv, sk, i, mask);
     }
+    
+    /*
+    * new decoding algorithm
+    * needs sc_mul
+    * needs rangeSigs holding rangeSigE
+    * decodes amount (can be one of two methods depending on secret index for ring 0)
+    * uses the resulting amount as indices for  a "map" to decode mask
+    * indices could be used to decode the entire rest of the range proof (s section)
+    * for encrypted data from the sender
+    */
+    /*
+    xmr_amount decodeRctNew(const rctSig& rv, const key& sk, unsigned int i, key& mask) {
+        ecdhTuple ecdh_info = rv.ecdhInfo[i];
+        bool try1 = true, try2 = true;
+        char data[33];
+        memcpy(data, &sk, 32);
+        data[32] = 0x03;
+        key dec = hash_to_scalar(data);
+        key amount;
+        //non secret index ("random" s as sc_add(s.bytes, s.bytes, dec.bytes))
+        sc_sub(amount.bytes, ecdh_info.amount.bytes, dec.bytes);
+        unsigned int j;
+        for (j = 8; j < 32; j++) {
+            if (amount[j] != 0) {
+                try1 = false;
+            }
+        }
+        data[32] = 0x01;
+        key sec = hash_to_scalar(data);
+        if (!try1) {
+            //rewinds proof, assuming secret index is here
+            //alpha = s + sec*c (assuming secret index)
+            //if s[0][1] is a secret index, alpha will be sc_add(alpha.bytes, amount.bytes, dec.bytes)
+            key alpha;
+            key L;
+            addKeys2(L, ecdh_info.mask, rv.rangeSigs[i].bsig.ee, rv.rangeSigs[i].Ci[0]);
+            key c = hash_to_scalar(L); //second c
+            key res;
+            // sec*c
+            sc_mul(res.bytes, sec.bytes, c.bytes);
+            // alpha = s + res
+            sc_add(alpha.bytes, ecdh_info.amount.bytes, res.bytes);
+            // amount = alpha - dec
+            sc_sub(amount.bytes, alpha.bytes, dec.bytes);
+            for (j = 8; j < 32; j++) {
+                if (amount[j] != 0) {
+                    try2 = false;
+                }
+            }
+        }
+        if (!try1 && !try2)
+            CHECK_AND_ASSERT_THROW_MES(false, "error, amount decoded incorrectly");
+        borroIndices indices;
+        d2b4(indices, h2d(amount);
+        data[32] = 0x02;
+        key maskKey = hash_to_scalar(data);
+        if (indices[0] == 0) {
+            //we know secret index if amount decoded
+            key alpha1, res;
+            sc_mul(res.bytes, sec.bytes, rv.rangeSigs[i].bsig.ee.bytes); // first c
+            sc_add(alpha1.bytes, ecdh_info.mask.bytes, res.bytes);
+            sc_sub(mask.bytes, alpha1.bytes, maskKey.bytes);
+        } else {
+            sc_sub(mask.bytes, ecdh_info.mask.bytes, maskKey.bytes);
+        }
+        key C = rv.outPk[i].mask;
+        key C_real;
+        if (rv.rangeSigs[i].exp) {
+            unsigned int e = 10;
+            while (e < rv.rangeSigs[i].exp) {
+                e *= 10;
+            }
+            scalarmultKey(C_real, rv.outPk[i].mask, d2h(e));
+        } else {
+            copy(C_real, C);
+        }
+        key Ctmp = commit(amount, mask);
+        if (equalKeys(C, Ctmp) == false) {
+            CHECK_AND_ASSERT_THROW_MES(false, "warning, amount decoded incorrectly, will be unable to spend");
+        }
+        return h2d(amount);
+    }
+    */
 }
